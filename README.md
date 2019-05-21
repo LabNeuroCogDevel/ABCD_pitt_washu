@@ -1,3 +1,6 @@
+# ABCD
+TODO: notes on project
+
 # Notes to collaborators 
 ## Setup
 
@@ -27,7 +30,9 @@ For syncing data, see [`rclone`](https://rclone.org/box/).
 
 see tutorials at the end of this nature [blog post](http://blogs.nature.com/naturejobs/2018/06/11/git-the-reproducibility-tool-scientists-love-to-hate/)
 
-The most straight forward usage looks like
+**RStudio ([tutorial](http://ohi-science.org/data-science-training/github.html#add-files-to-our-local-repo)) and MATLAB ([tutorial](https://osulp.github.io/git-advanced/05_integrate_matlab_and_git/index.html)) have built in git tools**
+
+The most straight forward CLI usage looks like
 ```
 git pull                   # get changes from everyone else -- stay up-to-date
 vim 00_firstthing.bash     # edit or create a file
