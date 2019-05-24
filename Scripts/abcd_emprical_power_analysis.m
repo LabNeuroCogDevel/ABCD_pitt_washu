@@ -1,0 +1,280 @@
+%% Emperical Power Analysis of BB Corrs (ABCD)
+
+% Load data 
+load('/data/nil-bluearc/GMT/Scott/ABCD/NetworkCorrs_21vars_bynetwork_3ksubs.mat')
+load('/data/nil-bluearc/GMT/Scott/ABCD/NetworkPvals_21vars_bynetwork_3ksubs.mat')
+
+TotalCorrs = squeeze(NetworkCorrs(:,:,size(NetworkCorrs,3),:,:));
+TotalEffects = squeeze(NetworkPvals(:,:,size(NetworkCorrs,3),:,:));
+
+%% All brain - behavior relationships (precision estimates)
+EffectbyNetwork = zeros(size(TotalCorrs,1),size(TotalCorrs,2),size(TotalCorrs,4)-1); % no FD
+outputvector = [];
+for i = 1:size(TotalCorrs,1)
+    for j = i:size(TotalCorrs,2)
+        for var = 2:size(TotalCorrs,4)
+            Thiscomp = nanmean(TotalCorrs(i,j,:,var),3);
+            EffectbyNetwork(i,j,var-1) = nanmean(TotalCorrs(i,j,:,var),3);
+            outputvector = [outputvector ; Thiscomp];
+        end
+    end
+end
+
+figure;hist(outputvector,50)
+xlabel('Brain Behavior Correlation (N=3,210)')
+ylabel('Frequency')
+set(gca,'FontWeight','bold','FontSize',14,'LineWidth',2)
+xlim([-.17 .17])
+
+%% Histogram of # of subjects needed to achieve 80% power
+
+% Find all variables-networks that have sig precision estimate
+EffectsMat = zeros(size(TotalCorrs,1),size(TotalCorrs,2),size(TotalCorrs,4)); % no FD
+
+for i = 1:size(TotalCorrs,1)
+    for j = i:size(TotalCorrs,2)
+        for var = 1:size(TotalCorrs,4)
+            EffectsMat(i,j,var) = mean(squeeze(TotalEffects(i,j,:,var)));
+        end
+    end
+end
+
+% Index significant associations -> 0 = significant; 1 = not significant 
+EffectsMat(EffectsMat>=.2) = 1; % not significant
+EffectsMat(EffectsMat<.05) = 0; % significant
+
+%% Determine N needed to achieve 80% power in true positive correlations
+SubsNeededfor80Power = nan(size(TotalCorrs,1),size(TotalCorrs,2),size(TotalCorrs,4));
+Powervector = [];
+for i = 1:size(TotalCorrs,1)
+    for j = i:size(TotalCorrs,2)
+        for var = 1:size(TotalCorrs,4)
+            if EffectsMat(i,j,var) == 0
+                ThisNet = squeeze(NetworkPvals(i,j,:,:,var));
+                IterationsSignificant = [];
+                for n = 1:size(ThisNet,1)             
+                    IterationsSignificant(n,1) = length(find(ThisNet(n,:)< 0.05));
+                end
+                idx = [];
+                idx = find(IterationsSignificant>=800); % 80% of iterations are significant (800/1000)
+                if idx
+                    SubsNeededfor80Power(i,j,var) = idx(1).*25; %25 = the binsize interval # of subjects 
+                    Powervector = [Powervector;idx(1).*25]; %vectorize output
+                end
+            end
+        end
+    end
+end
+% plot
+figure;hist(Powervector,25)
+xlabel('Sample Size Required to Achieve 80% Power')
+ylabel('Frequency')
+set(gca,'FontWeight','bold','FontSize',14,'LineWidth',2)
+xlim([0 2200])
+
+%% True Positive Power Curve (Type II error)
+
+PowerCurves = nan(size(TotalCorrs,1),size(TotalCorrs,2),size(TotalCorrs,4),size(NetworkCorrs,3));
+ToolboxPowerCurve = [];
+CBCLPowerCurve = [];
+MotionPowerCurve = [];
+for i = 1:size(TotalCorrs,1)
+    for j = i:size(TotalCorrs,2)
+        for var = 1:size(TotalCorrs,4)
+            if EffectsMat(i,j,var) == 0
+                ThisNet = squeeze(NetworkPvals(i,j,:,:,var));
+                IterationsSignificant = [];
+                for n = 1:size(ThisNet,1)             
+                    IterationsSignificant(n,1) = length(find(ThisNet(n,:)< 0.05));  
+                end
+                PowerCurves(i,j,var,:) =  IterationsSignificant./1000;
+                if var == 1
+                    MotionPowerCurve = [MotionPowerCurve IterationsSignificant./1000];
+                elseif var > 1 && var < 12 %toolbox
+                    ToolboxPowerCurve = [ToolboxPowerCurve IterationsSignificant./1000];
+                elseif var > 11 % cbcl
+                    CBCLPowerCurve = [CBCLPowerCurve IterationsSignificant./1000];
+                end
+                    
+            end
+        end
+    end
+end
+
+% Plot all significant power curves 
+figure; hold on;
+for i = 1:size(MotionPowerCurve,2)
+    plot(MotionPowerCurve(:,i),'Color',[0 .5 0],'LineWidth',1.5)
+end
+for i = 1:size(ToolboxPowerCurve,2)
+    plot(ToolboxPowerCurve(:,i),'Color',[.75 0 0],'LineWidth',1.5)
+end
+for i = 1:size(CBCLPowerCurve,2)
+   plot(CBCLPowerCurve(:,i),'Color',[0 0 .75],'LineWidth',1.5)
+end
+
+line([0 size(ToolboxPowerCurve,1)],[.8 .8],'Color',[0 0 0],'LineWidth',3) %line @ 80% power
+xlim([0 size(ToolboxPowerCurve,1)])
+xticks([1 12:12:size(ToolboxPowerCurve,1)]) % every 300 subjects; each bin = 25 subs
+xticklabels({'25'; '300';'600';'900';'1200';'1500';'1800';'2100';'2400';'2700';'3000'});
+xtickangle(45)
+xlabel('Number of Subjects','FontWeight','bold','FontSize',14)
+ylabel('Power','FontWeight','bold','FontSize',14)
+set(gca,'FontWeight','bold','FontSize',14,'LineWidth',2)
+
+% Plot mean for each 
+Meanmotion = mean(MotionPowerCurve,2);
+Stdmotion = std(MotionPowerCurve');
+CImotion = Meanmotion + (1.96*(Stdmotion./(sqrt(size(MotionPowerCurve,2)))))';
+
+MeanToolbox = mean(ToolboxPowerCurve,2);
+Stdtoolbox = std(ToolboxPowerCurve');
+
+Meancbcl = mean(CBCLPowerCurve,2);
+Stdcbcl = std(CBCLPowerCurve');
+
+figure; hold on
+plot(1:length(Meanmotion),Meanmotion,'Color',[0 .5 0],'LineWidth',3)
+plot(1:length(Meanmotion),MeanToolbox,'Color',[.75 0 0],'LineWidth',3)
+plot(1:length(Meanmotion),Meancbcl,'Color',[0 0 .75],'LineWidth',3)
+line([0 size(ToolboxPowerCurve,1)],[.8 .8],'Color',[0 0 0],'LineWidth',3) %line @ 80% power
+xlim([0 size(ToolboxPowerCurve,1)])
+ylim([0 1])
+xticks([1 12:12:size(ToolboxPowerCurve,1)]) % every 300 subjects; each bin = 25 subs
+xticklabels({'25'; '300';'600';'900';'1200';'1500';'1800';'2100';'2400';'2700';'3000'});
+xtickangle(45)
+xlabel('Number of Subjects','FontWeight','bold','FontSize',14)
+ylabel('Power','FontWeight','bold','FontSize',14)
+set(gca,'FontWeight','bold','FontSize',14,'LineWidth',2)
+
+
+% Plot min max for each subject interval as shaded error around mean 
+% define options for functions
+options.error = 'minmax';
+options.alpha = .25;
+options.color_line = [0 .5 0];
+options.color_area = [0 .5 0];
+options.line_width = 2;
+options.handle = figure(1);
+plot_areaerrorbar(MotionPowerCurve',options)
+hold on
+options.color_line = [.75 0 0];
+options.color_area = [.75 0 0];
+plot_areaerrorbar(ToolboxPowerCurve',options)
+hold on
+options.color_line = [0 0 .75];
+options.color_area = [0 0 .75];
+plot_areaerrorbar(CBCLPowerCurve',options)
+line([0 size(ToolboxPowerCurve,1)],[.8 .8],'Color',[0 0 0],'LineWidth',3) %line @ 80% power
+xlim([0 size(ToolboxPowerCurve,1)])
+ylim([0 1])
+xticks([1 12:12:size(ToolboxPowerCurve,1)]) % every 300 subjects; each bin = 25 subs
+xticklabels({'25'; '300';'600';'900';'1200';'1500';'1800';'2100';'2400';'2700';'3000'});
+xtickangle(45)
+xlabel('Number of Subjects','FontWeight','bold','FontSize',14)
+ylabel('Power','FontWeight','bold','FontSize',14)
+set(gca,'FontWeight','bold','FontSize',14,'LineWidth',2)
+
+%% False Positive Power Curve (Type I error)
+
+PowerCurves = nan(size(TotalCorrs,1),size(TotalCorrs,2),size(TotalCorrs,4),size(NetworkCorrs,3));
+ToolboxPowerCurve = [];
+CBCLPowerCurve = [];
+MotionPowerCurve = [];
+for i = 1:size(TotalCorrs,1)
+    for j = i:size(TotalCorrs,2)
+        for var = 1:size(TotalCorrs,4)
+            if EffectsMat(i,j,var) == 1
+                ThisNet = squeeze(NetworkPvals(i,j,:,:,var));
+                IterationsSignificant = [];
+                for n = 1:size(ThisNet,1)             
+                    IterationsSignificant(n,1) = length(find(ThisNet(n,:) < 0.005));  
+                end
+                PowerCurves(i,j,var,:) =  IterationsSignificant./1000;
+                if var == 1
+                    MotionPowerCurve = [MotionPowerCurve IterationsSignificant./1000];
+                elseif var > 1 && var < 12 %toolbox
+                    ToolboxPowerCurve = [ToolboxPowerCurve IterationsSignificant./1000];
+                elseif var > 11 % cbcl
+                    CBCLPowerCurve = [CBCLPowerCurve IterationsSignificant./1000];
+                end
+                    
+            end
+        end
+    end
+end
+
+
+% Plot all significant power curves 
+figure; hold on;
+for i = 1:size(MotionPowerCurve,2)
+    plot(MotionPowerCurve(:,i),'Color',[0 .5 0],'LineWidth',1.5)
+end
+for i = 1:size(ToolboxPowerCurve,2)
+    plot(ToolboxPowerCurve(:,i),'Color',[.75 0 0],'LineWidth',1.5)
+end
+for i = 1:size(CBCLPowerCurve,2)
+   plot(CBCLPowerCurve(:,i),'Color',[0 0 .75],'LineWidth',1.5)
+end
+
+line([0 size(ToolboxPowerCurve,1)],[.8 .8],'Color',[0 0 0],'LineWidth',3) %line @ 80% power
+xlim([0 size(ToolboxPowerCurve,1)])
+xticks([1 12:12:size(ToolboxPowerCurve,1)]) % every 300 subjects; each bin = 25 subs
+xticklabels({'25'; '300';'600';'900';'1200';'1500';'1800';'2100';'2400';'2700';'3000'});
+xtickangle(45)
+xlabel('Number of Subjects','FontWeight','bold','FontSize',14)
+ylabel('Power','FontWeight','bold','FontSize',14)
+set(gca,'FontWeight','bold','FontSize',14,'LineWidth',2)
+
+% Plot mean for each 
+Meanmotion = mean(MotionPowerCurve,2);
+Stdmotion = std(MotionPowerCurve');
+CImotion = Meanmotion + (1.96*(Stdmotion./(sqrt(size(MotionPowerCurve,2)))))';
+
+MeanToolbox = mean(ToolboxPowerCurve,2);
+Stdtoolbox = std(ToolboxPowerCurve');
+
+Meancbcl = mean(CBCLPowerCurve,2);
+Stdcbcl = std(CBCLPowerCurve');
+
+figure; hold on
+plot(1:length(Meanmotion),Meanmotion,'Color',[0 .5 0],'LineWidth',3)
+plot(1:length(Meanmotion),MeanToolbox,'Color',[.75 0 0],'LineWidth',3)
+plot(1:length(Meanmotion),Meancbcl,'Color',[0 0 .75],'LineWidth',3)
+line([0 size(ToolboxPowerCurve,1)],[.8 .8],'Color',[0 0 0],'LineWidth',3) %line @ 80% power
+xlim([0 size(ToolboxPowerCurve,1)])
+ylim([0 .06])
+xticks([1 12:12:size(ToolboxPowerCurve,1)]) % every 300 subjects; each bin = 25 subs
+xticklabels({'25'; '300';'600';'900';'1200';'1500';'1800';'2100';'2400';'2700';'3000'});
+xtickangle(45)
+xlabel('Number of Subjects','FontWeight','bold','FontSize',14)
+ylabel('False Positive Rate','FontWeight','bold','FontSize',14)
+set(gca,'FontWeight','bold','FontSize',14,'LineWidth',2)
+
+
+% Plot min max for each subject interval as shaded error around mean 
+% define options for functions
+options.error = 'minmax';
+options.alpha = .25;
+options.color_line = [0 .5 0];
+options.color_area = [0 .5 0];
+options.line_width = 2;
+options.handle = figure(1);
+plot_areaerrorbar(MotionPowerCurve',options)
+hold on
+options.color_line = [.75 0 0];
+options.color_area = [.75 0 0];
+plot_areaerrorbar(ToolboxPowerCurve',options)
+hold on
+options.color_line = [0 0 .75];
+options.color_area = [0 0 .75];
+plot_areaerrorbar(CBCLPowerCurve',options)
+line([0 size(ToolboxPowerCurve,1)],[.8 .8],'Color',[0 0 0],'LineWidth',3) %line @ 80% power
+xlim([0 size(ToolboxPowerCurve,1)])
+ylim([0 1])
+xticks([1 12:12:size(ToolboxPowerCurve,1)]) % every 300 subjects; each bin = 25 subs
+xticklabels({'25'; '300';'600';'900';'1200';'1500';'1800';'2100';'2400';'2700';'3000'});
+xtickangle(45)
+xlabel('Number of Subjects','FontWeight','bold','FontSize',14)
+ylabel('Power','FontWeight','bold','FontSize',14)
+set(gca,'FontWeight','bold','FontSize',14,'LineWidth',2)
